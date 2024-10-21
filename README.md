@@ -24,14 +24,102 @@ This repo hosts both client and server behind a VPN in similar fashion to https:
  - The file structure and scripts are intentionally similar to the excellent `docker-transmission-openvpn` by `haugene` to ensure an almost 'drop-in' addition to your docker stack.
  - However, as my server runs on a Rockchip based device, I haven't figured out how to make Jellyfin transcode or leverage GPU (mind you Plex seems to do it out of the box - at least software transcoding). (See Known issues below)
 
-## Getting Started 
+## Getting Started
+
+**Docker**:
+
+```bash
+docker run --cap-add=NET_ADMIN \
+-e OPENVPN_PROVIDER=NORDVPN \
+-e OPENVPN_USERNAME=user \
+-e OPENVPN_PASSWORD=pass \
+-p 11470:11470 \
+-p 12470:12470 \
+ghcr.io/leewc/docker-stremio-openvpn:latest
+```
+
+The list of valid providers follow docker-transmission-openvpn:
+ - https://haugene.github.io/docker-transmission-openvpn/supported-providers/
+ - https://github.com/haugene/vpn-configs-contrib
+
+If your provider is not listed, you can provide your own OpenVPN config using env variable `OPENVPN_CONFIG`.
+
+**`docker-compose.yaml`**
+
+I prefer using docker compose, here's one with Traefik labels for reverse proxy. **Warning**: Do not expose the stremio backend to the public internet.
+
+```yaml
+# Avoid hardcoding secrets in docker-compose
+secrets:
+  openvpn_creds:
+    # Must be a file with 2 lines, username on 1st, password on 2nd
+    # https://haugene.github.io/docker-transmission-openvpn/faq/#send_username_and_password_via_a_file
+    file: '.secrets/your_openvpn_creds'
+
+services:
+  stremio-docker:
+    container_name: stremio
+    restart: unless-stopped
+    image: ghcr.io/leewc/docker-stremio-openvpn:latest
+    environment:
+      # - PUID=1000
+      # - PGID=1000
+      - OPENVPN_PROVIDER=NORDVPN
+      - NORDVPN_COUNTRY=US
+      - NORDVPN_CATEGORY=the_americas
+      - NORDVPN_PROTOCOL=udp
+      - HEALTH_CHECK_HOST=github.com
+      # Set by secrets
+      - OPENVPN_USERNAME=**None**
+      - OPENVPN_PASSWORD=**None**
+      - OPENVPN_OPTS=--inactive 3600 --ping 10 --ping-exit 60 # Restart if VPN goes down
+      - LOG_TO_STDOUT=true
+      - LOCAL_NETWORK=192.168.1.254/32 - TZ=America/Los_Angeles
+    secrets:
+      # Name must match https://github.com/haugene/docker-transmission-openvpn/blob/5bafe96354a53d0538ea9d308c1d774bdc5d4c88/openvpn/start.sh#L200,L221
+      - openvpn_creds
+    cap_add:
+      # to create tunnel device (/dev/net/tun)
+      - NET_ADMIN
+    networks:
+      - web
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.stremio.rule=Host(`stremio.example.com`)'
+      - 'traefik.http.routers.stremio.entrypoints=websecure'
+      - 'traefik.http.routers.stremio.tls.certResolver=primary'
+      - 'traefik.http.routers.stremio.service=stremio'
+      # Proxy to HTTP to avoid HTTPS: Request error Could not get a valid HTTPS certificate on Stremio's Server.js
+      - 'traefik.http.services.stremio.loadBalancer.server.port=11470'
+      - 'traefik.http.routers.stremio-ui.rule=Host(`stremio-ui.example.com`)'
+      - 'traefik.http.routers.stremio-ui.entrypoints=websecure'
+      - 'traefik.http.routers.stremio-ui.tls.certResolver=primary'
+      - 'traefik.http.routers.stremio-ui.service=stremio-ui'
+      - 'traefik.http.services.stremio-ui.loadBalancer.server.port=8080'
+      - 'com.centurylinklabs.watchtower.enable=true'
+
+# Connect to pre-defined network so other containers with docker-compose can be discovered by Traefik
+networks:
+  web:
+    external: true
+```
 
 How I recommend using this: Set up the *server* and then have your client (your phone/android tv/laptop) point to it and install add ons. This will avoid the app from using it's own locally hosted server at `localhost:11470` and routes all traffic via VPN. The caveat here is your client is still doing searches without the VPN. This way, your client is a true thin-client, the server does most heavy lifting (aside from addons)
 
 When you don't self host, you simply install the companion app, and visit app.strem.io and you're off to the races. When you self host, you can bundle everything into the docker container itself, so your phone doesn't need the app and just visits the webapp.
 
 When you self host, you can either decide to self host the server only, and use an app or do both. In my testing, doing both means your web browser needs to support H264, or the server needs to be smart/powerful enough to transcode, and complexities around GPU hardware/CPU software transcoding will arise.
- - Also, the version available/open source for self hosting is currently v5, which is Beta. It differs from the default v4.4 that is closed source. I found that the v4.4 player (https://app.strem.io/shell-v4.4/) can play more streams in browser than v5 can. I thought it was some jellyfin transcoding issue, but alas it doesn't seem to be it!
+ - Also, the version available/open source for self hosting is currently v5, which is Beta. It differs from the default v4.4 that is closed source. I found that the v4.4 player (https://app.strem.io/shell-v4.4/) can play more streams in browser than v5 can (eg MKV/H.265). I thought it was some jellyfin transcoding issue, but alas it doesn't seem to be it!
+
+### Development
+
+In the docker compose above, swap out the `image` field with:
+
+```
+build:
+      context: ./
+      dockerfile: Dockerfile
+```
 
 ### Add-ons
 
