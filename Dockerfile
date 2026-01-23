@@ -1,5 +1,5 @@
-FROM stremio/server:v4.20.11
-# latest: stremio/server:v4.20.11 - Sometimes there's a race condition with new versions https://github.com/Stremio/server-docker/issues/37
+FROM stremio/server:latest
+# latest: stremio/server:v4.20.16
 
 # v5.0.0-beta.8
 ARG STREMIO_WEB_RELEASE_VERSION=latest 
