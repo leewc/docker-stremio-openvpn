@@ -94,7 +94,7 @@ if [[ -z ${CHOSEN_OPENVPN_CONFIG} ]]; then
 
   if [[ "${VPN_CONFIG_SOURCE}" == "external" ]] && [[ "${VPN_PROVIDER}" != "custom" ]]; then
     # shellcheck source=openvpn/fetch-external-configs.sh
-    ./etc/openvpn/fetch-external-configs.sh
+    /etc/openvpn/fetch-external-configs.sh
   fi
 
   if [[ -f $VPN_PROVIDER_HOME/configure-openvpn.sh ]]; then
